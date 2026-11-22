@@ -2,10 +2,10 @@ local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local lp      = Players.LocalPlayer
 
-local CHECK_DELAY = 15 -- Tự mở kiểm tra lại mỗi 15 giây
+local CHECK_DELAY = 15
 
 -- ============================================================
--- TẠO UI HIỂN THỊ
+-- TẠO UI HIỂN THỊ (ĐẶT Ở MÉP TRÊN ĐỂ KHÔNG CHE NÚT ITEMS)
 -- ============================================================
 local guiParent = lp:FindFirstChild("PlayerGui")
 pcall(function()
@@ -31,8 +31,8 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = guiParent
 
 local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 265, 0, 115)
-Frame.Position = UDim2.new(0, 20, 0.35, 0)
+Frame.Size = UDim2.new(0, 275, 0, 115)
+Frame.Position = UDim2.new(0.5, -137, 0, 12)
 Frame.BackgroundColor3 = Color3.fromRGB(16, 16, 24)
 Frame.BackgroundTransparency = 0.1
 Frame.BorderSizePixel = 0
@@ -49,7 +49,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -16, 0, 22)
 Title.Position = UDim2.new(0, 10, 0, 6)
 Title.BackgroundTransparency = 1
-Title.Text = "INVENTORY CHECKER v7 (AUTO)"
+Title.Text = "INVENTORY CHECKER v8 (AUTO)"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -91,64 +91,117 @@ StatusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 StatusLabel.Parent = Frame
 
 -- ============================================================
--- HÀM TỰ BẤM NÚT UI KHÔNG CẦN THAO TÁC TAY
+-- TIỆN ÍCH TÌM NÚT THÔNG MINH (QUÉT TOÀN BỘ PLAYERGUI)
 -- ============================================================
+local function cleanText(str)
+    local s = tostring(str or "")
+    s = s:gsub("<[^>]+>", "") -- Bỏ thẻ RichText nếu có
+    s = s:gsub("^%s+", ""):gsub("%s+$", "")
+    return s:lower()
+end
+
+local function isVisibleTree(obj)
+    local cur = obj
+    while cur and cur ~= lp do
+        if cur:IsA("GuiObject") and not cur.Visible then
+            return false
+        elseif cur:IsA("ScreenGui") and not cur.Enabled then
+            return false
+        end
+        cur = cur.Parent
+    end
+    return true
+end
+
+local function getNearestButton(obj)
+    if obj:IsA("GuiButton") then return obj end
+    -- Dò ngược lên cha (tối đa 4 cấp)
+    local cur = obj.Parent
+    for _ = 1, 4 do
+        if not cur then break end
+        if cur:IsA("GuiButton") then return cur end
+        cur = cur.Parent
+    end
+    -- Dò anh em cùng cấp nếu nút bấm là lớp phủ trong suốt
+    if obj.Parent then
+        for _, sibling in ipairs(obj.Parent:GetChildren()) do
+            if sibling:IsA("GuiButton") then return sibling end
+        end
+    end
+    return nil
+end
+
+local function findButtonSmart(pGui, keywords)
+    local fallback = nil
+
+    for _, desc in ipairs(pGui:GetDescendants()) do
+        if not desc:IsDescendantOf(ScreenGui) then
+            local matched = false
+            local txt = ""
+            if desc:IsA("TextButton") or desc:IsA("TextLabel") then
+                txt = cleanText(desc.Text)
+            end
+            local nm = cleanText(desc.Name)
+
+            for _, kw in ipairs(keywords) do
+                if txt == kw or nm == kw or (desc:IsA("GuiButton") and nm:find(kw, 1, true)) then
+                    matched = true
+                    break
+                end
+            end
+
+            if matched then
+                local btn = getNearestButton(desc)
+                if btn then
+                    if isVisibleTree(btn) then
+                        return btn
+                    elseif not fallback then
+                        fallback = btn
+                    end
+                end
+            end
+        end
+    end
+
+    return fallback
+end
+
 local function clickGuiButton(btn)
     if not btn then return false end
     local clicked = false
+    local signals = { "MouseButton1Down", "MouseButton1Up", "MouseButton1Click", "Activated" }
 
-    if type(firesignal) == "function" then
-        pcall(function() firesignal(btn.MouseButton1Click); clicked = true end)
-        pcall(function() firesignal(btn.Activated); clicked = true end)
-    end
-
-    if type(getconnections) == "function" then
-        for _, signal in ipairs({ btn.MouseButton1Click, btn.Activated }) do
-            pcall(function()
-                for _, conn in ipairs(getconnections(signal)) do
-                    if type(conn.Fire) == "function" then
-                        pcall(function() conn:Fire(); clicked = true end)
-                    elseif type(conn.Function) == "function" then
-                        pcall(function() conn.Function(); clicked = true end)
+    for _, sigName in ipairs(signals) do
+        local okSig, sig = pcall(function() return btn[sigName] end)
+        if okSig and sig then
+            if type(firesignal) == "function" then
+                pcall(function() firesignal(sig); clicked = true end)
+            end
+            if type(getconnections) == "function" then
+                pcall(function()
+                    for _, conn in ipairs(getconnections(sig)) do
+                        if type(conn.Fire) == "function" then
+                            pcall(function() conn:Fire(); clicked = true end)
+                        elseif type(conn.Function) == "function" then
+                            pcall(function() conn.Function(); clicked = true end)
+                        end
                     end
-                end
-            end)
+                end)
+            end
         end
     end
 
     return clicked
 end
 
-local function findButtonByLabel(root, targetLower, mustBeVisible)
-    if not root then return nil end
-    for _, desc in ipairs(root:GetDescendants()) do
-        if desc:IsA("GuiButton") and not desc:IsDescendantOf(ScreenGui) then
-            if not mustBeVisible or desc.Visible then
-                local n = tostring(desc.Name or ""):lower()
-                local t = desc:IsA("TextButton") and tostring(desc.Text or ""):lower() or ""
-                if n == targetLower or t == targetLower then
-                    return desc
-                end
-                -- Kiểm tra TextLabel nằm bên trong ImageButton
-                for _, child in ipairs(desc:GetChildren()) do
-                    if child:IsA("TextLabel") and tostring(child.Text or ""):lower() == targetLower then
-                        return desc
-                    end
-                end
-            end
-        end
-    end
-    return nil
-end
-
 -- ============================================================
--- HÀM ĐỌC SỐ LƯỢNG TRONG TÚI ĐỒ
+-- QUÉT SỐ LƯỢNG ITEM TRONG PLAYERGUI
 -- ============================================================
 local function parseNumberFromSlot(slot, keyword)
     if not slot then return nil end
     for _, desc in ipairs(slot:GetDescendants()) do
         if desc:IsA("TextLabel") or desc:IsA("TextButton") then
-            local t = tostring(desc.Text or "")
+            local t = tostring(desc.Text or ""):gsub("<[^>]+>", ""):gsub("^%s+", ""):gsub("%s+$", "")
             local low = t:lower()
             if low ~= "" and not low:find(keyword, 1, true) then
                 local num = t:match("^[xX]%s*(%d+)$")
@@ -177,15 +230,15 @@ local function getCountNearObject(obj, keyword)
     return 1
 end
 
-local function scanInventoryUI(root)
+local function scanInventoryUI(pGui)
     local foundEgg  = 0
     local foundBone = 0
     local hitAny    = false
 
-    for _, desc in ipairs(root:GetDescendants()) do
+    for _, desc in ipairs(pGui:GetDescendants()) do
         if not desc:IsDescendantOf(ScreenGui) then
-            local nameLow = tostring(desc.Name or ""):lower()
-            local textLow = (desc:IsA("TextLabel") or desc:IsA("TextButton")) and tostring(desc.Text or ""):lower() or ""
+            local nameLow = cleanText(desc.Name)
+            local textLow = (desc:IsA("TextLabel") or desc:IsA("TextButton")) and cleanText(desc.Text) or ""
 
             if nameLow:find("dragon egg", 1, true) or textLow:find("dragon egg", 1, true) then
                 local n = getCountNearObject(desc, "dragon egg")
@@ -203,15 +256,24 @@ local function scanInventoryUI(root)
 end
 
 -- ============================================================
--- QUY TRÌNH TỰ MỞ TÚI -> ĐỌC -> TỰ ĐÓNG
+-- QUY TRÌNH TỰ MỞ -> ĐỌC -> ĐÓNG
 -- ============================================================
 local lastEggs, lastBones = 0, 0
 
 local function autoOpenAndCheck(runIndex)
     local pGui = lp:FindFirstChild("PlayerGui")
-    local root = pGui and (pGui:FindFirstChild("Main") or pGui)
-    if not root then
+    if not pGui then
         StatusLabel.Text = "Khong thay PlayerGui (#" .. tostring(runIndex) .. ")"
+        return
+    end
+
+    -- Quét trước 1 lượt phòng trường hợp item đã được load sẵn trong UI
+    local preHit, preEgg, preBone = scanInventoryUI(pGui)
+    if preHit then
+        lastEggs, lastBones = preEgg, preBone
+        EggLabel.Text  = "Dragon Egg: " .. tostring(preEgg)
+        BoneLabel.Text = "Dinosaur Bones: " .. tostring(preBone)
+        StatusLabel.Text = "Doc truc tiep OK (#" .. tostring(runIndex) .. ")"
         return
     end
 
@@ -220,51 +282,49 @@ local function autoOpenAndCheck(runIndex)
         return
     end
 
-    -- 1. Mở Menu nếu nút Items chưa hiện
-    local itemsBtn = findButtonByLabel(root, "items", true)
-    if not itemsBtn then
-        local menuBtn = findButtonByLabel(root, "menu", true)
+    -- Tìm nút Items (mở Menu trước nếu Items đang ẩn)
+    local itemsBtn = findButtonSmart(pGui, { "items", "inventory" })
+    if not itemsBtn or not isVisibleTree(itemsBtn) then
+        local menuBtn = findButtonSmart(pGui, { "menu" })
         if menuBtn then
-            StatusLabel.Text = "Tu bam Menu..."
+            StatusLabel.Text = "Bam Menu (" .. menuBtn.Name .. ")..."
             clickGuiButton(menuBtn)
             task.wait(0.6)
-            itemsBtn = findButtonByLabel(root, "items", true) or findButtonByLabel(root, "items", false)
+            itemsBtn = findButtonSmart(pGui, { "items", "inventory" })
         end
     end
 
-    -- 2. Bấm mở Items
-    if itemsBtn then
-        StatusLabel.Text = "Tu mo Items..."
-        clickGuiButton(itemsBtn)
-        task.wait(1.2)
-    else
-        StatusLabel.Text = "Khong tim thay nut Items (#" .. tostring(runIndex) .. ")"
+    if not itemsBtn then
+        StatusLabel.Text = "Van khong thay nut Items (#" .. tostring(runIndex) .. ")"
         return
     end
 
-    -- 3. Bấm qua tab Material (nếu có)
-    local matBtn = findButtonByLabel(root, "material", true) or findButtonByLabel(root, "materials", true)
-    if matBtn then
+    StatusLabel.Text = "Bam " .. itemsBtn.Name .. "..."
+    clickGuiButton(itemsBtn)
+    task.wait(1.2)
+
+    -- Chuyển sang tab Material nếu thấy
+    local matBtn = findButtonSmart(pGui, { "material", "materials" })
+    if matBtn and isVisibleTree(matBtn) then
         StatusLabel.Text = "Chon tab Material..."
         clickGuiButton(matBtn)
         task.wait(0.8)
     end
 
-    -- 4. Quét dữ liệu
-    StatusLabel.Text = "Dang quet item..."
-    local hitAny, eggs, bones = scanInventoryUI(root)
+    -- Quét item
+    local hitAny, eggs, bones = scanInventoryUI(pGui)
     lastEggs, lastBones = eggs, bones
     EggLabel.Text  = "Dragon Egg: " .. tostring(eggs)
     BoneLabel.Text = "Dinosaur Bones: " .. tostring(bones)
 
-    -- 5. Tự đóng túi đồ cho đỡ lag
+    -- Đóng túi đồ lại
     task.wait(0.3)
     clickGuiButton(itemsBtn)
 
     if hitAny then
         StatusLabel.Text = "OK - Da dong tui (#" .. tostring(runIndex) .. ")"
     else
-        StatusLabel.Text = "Da quet xong - 0 item (#" .. tostring(runIndex) .. ")"
+        StatusLabel.Text = "Da bam " .. itemsBtn.Name .. " - 0 item (#" .. tostring(runIndex) .. ")"
     end
 end
 
