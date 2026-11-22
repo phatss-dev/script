@@ -1,23 +1,17 @@
-repeat task.wait() until game:IsLoaded()
-repeat task.wait() until game:GetService("Players").LocalPlayer
-
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui           = game:GetService("CoreGui")
 local lp                = Players.LocalPlayer
 
--- ============================================================
--- CẤU HÌNH
--- ============================================================
-local CHECK_DELAY = 3 -- Thời gian cập nhật (giây)
+local CHECK_DELAY = 3
 
 -- ============================================================
--- GIAO DIỆN HIỂN THỊ MINI (TẠO TRƯỚC ĐỂ HIỆN TRẠNG THÁI NGAY)
+-- TẠO UI HIỂN THỊ NGAY LẬP TỨC
 -- ============================================================
 local guiParent = CoreGui
 pcall(function()
     if not CoreGui:FindFirstChild("RobloxGui") then
-        guiParent = lp:WaitForChild("PlayerGui")
+        guiParent = lp.PlayerGui
     end
 end)
 
@@ -32,7 +26,7 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = guiParent
 
 local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 240, 0, 108)
+Frame.Size = UDim2.new(0, 250, 0, 112)
 Frame.Position = UDim2.new(0, 20, 0.35, 0)
 Frame.BackgroundColor3 = Color3.fromRGB(16, 16, 24)
 Frame.BackgroundTransparency = 0.1
@@ -50,7 +44,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -16, 0, 22)
 Title.Position = UDim2.new(0, 10, 0, 6)
 Title.BackgroundTransparency = 1
-Title.Text = "INVENTORY CHECKER"
+Title.Text = "INVENTORY CHECKER v3"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -61,7 +55,7 @@ local EggLabel = Instance.new("TextLabel")
 EggLabel.Size = UDim2.new(1, -16, 0, 22)
 EggLabel.Position = UDim2.new(0, 10, 0, 30)
 EggLabel.BackgroundTransparency = 1
-EggLabel.Text = "Dragon Egg: ..."
+EggLabel.Text = "Dragon Egg: 0"
 EggLabel.Font = Enum.Font.GothamSemibold
 EggLabel.TextSize = 13
 EggLabel.TextColor3 = Color3.fromRGB(245, 180, 60)
@@ -72,7 +66,7 @@ local BoneLabel = Instance.new("TextLabel")
 BoneLabel.Size = UDim2.new(1, -16, 0, 22)
 BoneLabel.Position = UDim2.new(0, 10, 0, 54)
 BoneLabel.BackgroundTransparency = 1
-BoneLabel.Text = "Dinosaur Bones: ..."
+BoneLabel.Text = "Dinosaur Bones: 0"
 BoneLabel.Font = Enum.Font.GothamSemibold
 BoneLabel.TextSize = 13
 BoneLabel.TextColor3 = Color3.fromRGB(180, 230, 160)
@@ -80,78 +74,20 @@ BoneLabel.TextXAlignment = Enum.TextXAlignment.Left
 BoneLabel.Parent = Frame
 
 local StatusLabel = Instance.new("TextLabel")
-StatusLabel.Size = UDim2.new(1, -16, 0, 18)
-StatusLabel.Position = UDim2.new(0, 10, 0, 82)
+StatusLabel.Size = UDim2.new(1, -16, 0, 20)
+StatusLabel.Position = UDim2.new(0, 10, 0, 84)
 StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "Đang nạp module..."
+StatusLabel.Text = "Dang quet..."
 StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextSize = 10
-StatusLabel.TextColor3 = Color3.fromRGB(160, 160, 190)
+StatusLabel.TextColor3 = Color3.fromRGB(170, 170, 200)
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 StatusLabel.Parent = Frame
 
 -- ============================================================
--- NẠP MODULE INVENTORY (DÙNG WAITFORCHILD CHUẨN)
+-- NHẬN DIỆN TÊN ITEM
 -- ============================================================
-local ItemReplicationService, KEYS, ItemConfig
-local irsError = nil
-
-local okReq, errReq = pcall(function()
-    local serviceMod = ReplicatedStorage:WaitForChild("ItemReplicationService", 10)
-    if not serviceMod then error("Khong thay ItemReplicationService") end
-
-    ItemReplicationService = require(serviceMod)
-    KEYS = require(serviceMod:WaitForChild("KEYS", 10))
-    ItemConfig = require(ReplicatedStorage:WaitForChild("ItemConfig", 10))
-end)
-
-if not okReq then
-    irsError = tostring(errReq)
-    StatusLabel.Text = "IRS loi -> dung Remote"
-else
-    -- Chờ inventory khởi tạo xong (tối đa 10s)
-    StatusLabel.Text = "Cho inventory khoi tao..."
-    local t0 = os.clock()
-    repeat
-        local ready = false
-        pcall(function()
-            if ItemReplicationService.IsInitialized == true then
-                ready = true
-            else
-                local items = ItemReplicationService:GetItems(KEYS.QUANTITY)
-                if items ~= nil then ready = true end
-            end
-        end)
-        if ready then break end
-        task.wait(0.5)
-    until os.clock() - t0 >= 10
-end
-
--- ============================================================
--- XỬ LÝ TÊN ITEM & ĐỌC SỐ LƯỢNG
--- ============================================================
-local function getCleanName(itemId)
-    if not ItemConfig then return nil end
-    local ok, result = pcall(function()
-        local matched = ItemConfig.match(itemId)
-        if not matched then return nil end
-
-        local itemData = matched:unwrap()
-        if not (itemData and itemData.Index and itemData.Index.DebugLabel) then
-            return nil
-        end
-
-        local fullName = tostring(itemData.Index.DebugLabel)
-        local cleanName = fullName:match("^(.-)%s*%[")
-        if cleanName and cleanName ~= "" then
-            return cleanName
-        end
-        return fullName
-    end)
-    return ok and result or nil
-end
-
 local function isDragonEgg(name)
     local s = tostring(name or ""):lower()
     return s:find("dragon egg", 1, true) ~= nil or s:find("dragonegg", 1, true) ~= nil
@@ -162,84 +98,138 @@ local function isDinoBone(name)
     return s:find("dinosaur bone", 1, true) ~= nil or s:find("dino bone", 1, true) ~= nil or s:find("dinobone", 1, true) ~= nil
 end
 
-local function checkTargetItems()
-    local eggCount  = 0
-    local boneCount = 0
-    local source    = "None"
+-- ============================================================
+-- NGUỒN 1: ITEM REPLICATION SERVICE
+-- ============================================================
+local ItemReplicationService, KEYS, ItemConfig
 
-    -- Cách 1: Đọc qua ItemReplicationService
-    if ItemReplicationService and KEYS and ItemConfig then
-        local ok, quantityItems = pcall(function()
-            return ItemReplicationService:GetItems(KEYS.QUANTITY)
-        end)
-
-        if ok and type(quantityItems) == "table" then
-            source = "IRS"
-            for _, item in pairs(quantityItems) do
-                local itemId = item and item.ItemId
-                local amount = tonumber(item and item.Value) or 0
-
-                if itemId and amount > 0 then
-                    local name = getCleanName(itemId)
-                    if name then
-                        if isDragonEgg(name) then
-                            eggCount = eggCount + amount
-                        elseif isDinoBone(name) then
-                            boneCount = boneCount + amount
-                        end
-                    end
-                end
-            end
+local function initIRS()
+    if ItemReplicationService and KEYS and ItemConfig then return true end
+    local ok = pcall(function()
+        local serviceMod = ReplicatedStorage:FindFirstChild("ItemReplicationService")
+        local configMod  = ReplicatedStorage:FindFirstChild("ItemConfig")
+        if serviceMod and configMod then
+            ItemReplicationService = require(serviceMod)
+            KEYS = require(serviceMod:FindFirstChild("KEYS"))
+            ItemConfig = require(configMod)
         end
-    end
-
-    -- Cách 2: Dự phòng qua Remote CommF_ ("getInventory")
-    if source == "None" or (eggCount == 0 and boneCount == 0) then
-        local okInv, inv = pcall(function()
-            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-            local commF = remotes and remotes:FindFirstChild("CommF_")
-            if not commF then return nil end
-            return commF:InvokeServer("getInventory")
-        end)
-
-        if okInv and type(inv) == "table" then
-            local rEgg, rBone = 0, 0
-            for _, item in pairs(inv) do
-                if type(item) == "table" then
-                    local name = item.Name or item.RawName or item.StorageKey
-                    local count = tonumber(item.Count) or 1
-                    if name then
-                        if isDragonEgg(name) then
-                            rEgg = rEgg + count
-                        elseif isDinoBone(name) then
-                            rBone = rBone + count
-                        end
-                    end
-                end
-            end
-
-            if rEgg > eggCount then eggCount = rEgg end
-            if rBone > boneCount then boneCount = rBone end
-            source = (source == "IRS") and "IRS+Remote" or "Remote"
-        end
-    end
-
-    return eggCount, boneCount, source
+    end)
+    return ok and ItemReplicationService ~= nil and KEYS ~= nil and ItemConfig ~= nil
 end
 
-getgenv().CheckDragonItems = checkTargetItems
+local function getCleanName(itemId)
+    local ok, res = pcall(function()
+        local matched = ItemConfig.match(itemId)
+        if not matched then return nil end
+        local data = matched:unwrap()
+        if not (data and data.Index and data.Index.DebugLabel) then return nil end
+        local full = tostring(data.Index.DebugLabel)
+        return full:match("^(.-)%s*%[") or full
+    end)
+    return ok and res or nil
+end
+
+local function readFromIRS()
+    if not initIRS() then return false, 0, 0 end
+    local ok, items = pcall(function()
+        return ItemReplicationService:GetItems(KEYS.QUANTITY)
+    end)
+    if not ok or type(items) ~= "table" then return false, 0, 0 end
+
+    local eggs, bones = 0, 0
+    for _, item in pairs(items) do
+        local id = item and item.ItemId
+        local amt = tonumber(item and item.Value) or 0
+        if id and amt > 0 then
+            local name = getCleanName(id)
+            if name then
+                if isDragonEgg(name) then
+                    eggs = eggs + amt
+                elseif isDinoBone(name) then
+                    bones = bones + amt
+                end
+            end
+        end
+    end
+    return true, eggs, bones
+end
 
 -- ============================================================
--- VÒNG LẶP CẬP NHẬT
+-- NGUỒN 2: REMOTE COMMF_ (CÓ TIMEOUT 3s CHỐNG TREO)
 -- ============================================================
+local function readFromRemoteWithTimeout(timeoutSec)
+    local finished = false
+    local invResult = nil
+
+    task.spawn(function()
+        pcall(function()
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            local commF = remotes and remotes:FindFirstChild("CommF_")
+            if commF then
+                invResult = commF:InvokeServer("getInventory")
+            end
+        end)
+        finished = true
+    end)
+
+    local t0 = os.clock()
+    while not finished and (os.clock() - t0) < (timeoutSec or 3) do
+        task.wait(0.1)
+    end
+
+    if not finished or type(invResult) ~= "table" then
+        return false, 0, 0
+    end
+
+    local eggs, bones = 0, 0
+    for _, item in pairs(invResult) do
+        if type(item) == "table" then
+            local name = item.Name or item.RawName or item.StorageKey
+            local count = tonumber(item.Count) or 1
+            if name then
+                if isDragonEgg(name) then
+                    eggs = eggs + count
+                elseif isDinoBone(name) then
+                    bones = bones + count
+                end
+            end
+        end
+    end
+    return true, eggs, bones
+end
+
+-- ============================================================
+-- QUÉT NGAY & LẶP CẬP NHẬT
+-- ============================================================
+local function updateOnce()
+    local eggs, bones = 0, 0
+    local src = "Fail"
+
+    local okIRS, iEgg, iBone = readFromIRS()
+    if okIRS then
+        eggs, bones = iEgg, iBone
+        src = "IRS"
+    end
+
+    if not okIRS or (eggs == 0 and bones == 0) then
+        local okRem, rEgg, rBone = readFromRemoteWithTimeout(3)
+        if okRem then
+            if rEgg > eggs then eggs = rEgg end
+            if rBone > bones then bones = rBone end
+            src = okIRS and "IRS+Remote" or "Remote"
+        elseif not okIRS then
+            src = "Timeout/Blocked"
+        end
+    end
+
+    EggLabel.Text    = "Dragon Egg: " .. tostring(eggs)
+    BoneLabel.Text   = "Dinosaur Bones: " .. tostring(bones)
+    StatusLabel.Text = src .. " | " .. os.date("%H:%M:%S")
+end
+
 task.spawn(function()
     while ScreenGui.Parent do
-        local eggs, bones, src = checkTargetItems()
-
-        EggLabel.Text    = "Dragon Egg: " .. tostring(eggs)
-        BoneLabel.Text   = "Dinosaur Bones: " .. tostring(bones)
-        StatusLabel.Text = "OK (" .. src .. ") | " .. os.date("%H:%M:%S")
-
+        updateOnce()
         task.wait(CHECK_DELAY)
     end
 end)
