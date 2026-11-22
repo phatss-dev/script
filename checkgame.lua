@@ -5,13 +5,13 @@ local lp                = Players.LocalPlayer
 
 local CHECK_DELAY = 3
 
--- ============================================================
--- TẠO UI HIỂN THỊ
--- ============================================================
-local guiParent = CoreGui
+-- Chọn nơi gắn UI an toàn (gethui -> CoreGui -> PlayerGui)
+local guiParent = lp:FindFirstChild("PlayerGui")
 pcall(function()
-    if not CoreGui:FindFirstChild("RobloxGui") then
-        guiParent = lp.PlayerGui
+    if type(gethui) == "function" then
+        guiParent = gethui()
+    elseif CoreGui:FindFirstChild("RobloxGui") then
+        guiParent = CoreGui
     end
 end)
 
@@ -26,7 +26,7 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = guiParent
 
 local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 250, 0, 112)
+Frame.Size = UDim2.new(0, 260, 0, 112)
 Frame.Position = UDim2.new(0, 20, 0.35, 0)
 Frame.BackgroundColor3 = Color3.fromRGB(16, 16, 24)
 Frame.BackgroundTransparency = 0.1
@@ -44,7 +44,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -16, 0, 22)
 Title.Position = UDim2.new(0, 10, 0, 6)
 Title.BackgroundTransparency = 1
-Title.Text = "INVENTORY CHECKER v4"
+Title.Text = "INVENTORY CHECKER v5"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -77,7 +77,7 @@ local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Size = UDim2.new(1, -16, 0, 20)
 StatusLabel.Position = UDim2.new(0, 10, 0, 84)
 StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "Dang doc CommF_..."
+StatusLabel.Text = "Khoi chay..."
 StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextSize = 10
 StatusLabel.TextColor3 = Color3.fromRGB(170, 170, 200)
@@ -86,30 +86,42 @@ StatusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 StatusLabel.Parent = Frame
 
 -- ============================================================
--- ĐỌC TÚI ĐỒ CHỈ QUA COMMF_ (KHÔNG DÙNG REQUIRE)
+-- ĐỌC TÚI ĐỒ QUA COMMF_ (BẮT RÕ LỖI, CÓ TIMEOUT 5s)
 -- ============================================================
 local function checkInventoryViaCommF()
     local done = false
+    local callOk = false
     local inv = nil
+    local errMsg = ""
 
     task.spawn(function()
-        pcall(function()
-            inv = ReplicatedStorage.Remotes.CommF_:InvokeServer("getInventory")
+        callOk, inv = pcall(function()
+            local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+            if not remotes then error("Thieu Remotes") end
+            local commF = remotes:FindFirstChild("CommF_")
+            if not commF then error("Thieu CommF_") end
+            return commF:InvokeServer("getInventory")
         end)
+        if not callOk then
+            errMsg = tostring(inv)
+        end
         done = true
     end)
 
-    -- Chờ tối đa 5 giây tránh treo
-    local t0 = os.clock()
-    while not done and (os.clock() - t0) < 5 do
+    local elapsed = 0
+    while not done and elapsed < 5 do
         task.wait(0.1)
+        elapsed = elapsed + 0.1
     end
 
     if not done then
-        return false, 0, 0, "Remote Timeout"
+        return false, 0, 0, "Loi: Remote Timeout (>5s)"
+    end
+    if not callOk then
+        return false, 0, 0, "Loi: " .. errMsg
     end
     if type(inv) ~= "table" then
-        return false, 0, 0, "Data: " .. tostring(type(inv))
+        return false, 0, 0, "Loi data: " .. tostring(type(inv))
     end
 
     local eggs  = 0
@@ -130,25 +142,34 @@ local function checkInventoryViaCommF()
         end
     end
 
-    return true, eggs, bones, "OK (" .. total .. " items)"
+    return true, eggs, bones, "OK (" .. tostring(total) .. " items)"
 end
 
-getgenv().CheckDragonItems = function()
-    local _, eggs, bones = checkInventoryViaCommF()
-    return eggs, bones
-end
+pcall(function()
+    if type(getgenv) == "function" then
+        getgenv().CheckDragonItems = function()
+            local _, eggs, bones = checkInventoryViaCommF()
+            return eggs, bones
+        end
+    end
+end)
 
 -- ============================================================
 -- VÒNG LẶP CẬP NHẬT
 -- ============================================================
 task.spawn(function()
-    while ScreenGui.Parent do
+    local tickCount = 0
+    while true do
+        tickCount = tickCount + 1
+        StatusLabel.Text = "Dang doc lan #" .. tostring(tickCount) .. "..."
+
         local ok, eggs, bones, info = checkInventoryViaCommF()
         if ok then
             EggLabel.Text  = "Dragon Egg: " .. tostring(eggs)
             BoneLabel.Text = "Dinosaur Bones: " .. tostring(bones)
         end
-        StatusLabel.Text = info .. " | " .. os.date("%H:%M:%S")
+        StatusLabel.Text = info .. " (#" .. tostring(tickCount) .. ")"
+
         task.wait(CHECK_DELAY)
     end
 end)
