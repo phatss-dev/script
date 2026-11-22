@@ -5,7 +5,7 @@ local lp      = Players.LocalPlayer
 local CHECK_DELAY = 15
 
 -- ============================================================
--- TẠO UI HIỂN THỊ (ĐẶT Ở MÉP TRÊN ĐỂ KHÔNG CHE NÚT ITEMS)
+-- TẠO UI HIỂN THỊ
 -- ============================================================
 local guiParent = lp:FindFirstChild("PlayerGui")
 pcall(function()
@@ -49,7 +49,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, -16, 0, 22)
 Title.Position = UDim2.new(0, 10, 0, 6)
 Title.BackgroundTransparency = 1
-Title.Text = "INVENTORY CHECKER v8 (AUTO)"
+Title.Text = "INVENTORY CHECKER v9 (AUTO)"
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -91,11 +91,11 @@ StatusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 StatusLabel.Parent = Frame
 
 -- ============================================================
--- TIỆN ÍCH TÌM NÚT THÔNG MINH (QUÉT TOÀN BỘ PLAYERGUI)
+-- TIỆN ÍCH XỬ LÝ UI & TÌM NÚT
 -- ============================================================
 local function cleanText(str)
     local s = tostring(str or "")
-    s = s:gsub("<[^>]+>", "") -- Bỏ thẻ RichText nếu có
+    s = s:gsub("<[^>]+>", "")
     s = s:gsub("^%s+", ""):gsub("%s+$", "")
     return s:lower()
 end
@@ -113,16 +113,25 @@ local function isVisibleTree(obj)
     return true
 end
 
+local function isGridContainer(obj)
+    if not obj then return true end
+    if obj:IsA("ScrollingFrame") or obj:IsA("ScreenGui") then
+        return true
+    end
+    if obj:FindFirstChildOfClass("UIGridLayout") then
+        return true
+    end
+    return false
+end
+
 local function getNearestButton(obj)
     if obj:IsA("GuiButton") then return obj end
-    -- Dò ngược lên cha (tối đa 4 cấp)
     local cur = obj.Parent
     for _ = 1, 4 do
         if not cur then break end
         if cur:IsA("GuiButton") then return cur end
         cur = cur.Parent
     end
-    -- Dò anh em cùng cấp nếu nút bấm là lớp phủ trong suốt
     if obj.Parent then
         for _, sibling in ipairs(obj.Parent:GetChildren()) do
             if sibling:IsA("GuiButton") then return sibling end
@@ -137,10 +146,7 @@ local function findButtonSmart(pGui, keywords)
     for _, desc in ipairs(pGui:GetDescendants()) do
         if not desc:IsDescendantOf(ScreenGui) then
             local matched = false
-            local txt = ""
-            if desc:IsA("TextButton") or desc:IsA("TextLabel") then
-                txt = cleanText(desc.Text)
-            end
+            local txt = (desc:IsA("TextButton") or desc:IsA("TextLabel")) and cleanText(desc.Text) or ""
             local nm = cleanText(desc.Name)
 
             for _, kw in ipairs(keywords) do
@@ -195,39 +201,92 @@ local function clickGuiButton(btn)
 end
 
 -- ============================================================
--- QUÉT SỐ LƯỢNG ITEM TRONG PLAYERGUI
+-- ĐỌC SỐ LƯỢNG CHÍNH XÁC TỪ Ô ITEM (FIX LỖI ĐỌC RA 1)
 -- ============================================================
-local function parseNumberFromSlot(slot, keyword)
+local function parseCountFromSlot(slot, keyword)
     if not slot then return nil end
+
+    local bestVal  = nil
+    local bestPrio = -1
+
     for _, desc in ipairs(slot:GetDescendants()) do
-        if desc:IsA("TextLabel") or desc:IsA("TextButton") then
-            local t = tostring(desc.Text or ""):gsub("<[^>]+>", ""):gsub("^%s+", ""):gsub("%s+$", "")
-            local low = t:lower()
+        if (desc:IsA("TextLabel") or desc:IsA("TextButton")) and desc.Visible and (desc.TextTransparency or 0) < 0.95 then
+            local raw = tostring(desc.Text or ""):gsub("<[^>]+>", "")
+            raw = raw:gsub(",", ""):gsub("^%s+", ""):gsub("%s+$", "")
+            local low = raw:lower()
+
             if low ~= "" and not low:find(keyword, 1, true) then
-                local num = t:match("^[xX]%s*(%d+)$")
-                    or t:match("^(%d+)%s*[xX]$")
-                    or t:match("^(%d+)$")
-                if num then
-                    local n = tonumber(num)
+                local numStr = raw:match("^[xX]%s*(%d+)$")
+                    or raw:match("^(%d+)%s*[xX]$")
+                    or raw:match("^(%d+)$")
+
+                if numStr then
+                    local n = tonumber(numStr)
                     if n and n > 0 and n < 100000 then
-                        return n
+                        local nameLow = cleanText(desc.Name)
+                        -- Bỏ qua nhãn level / mastery / giá tiền
+                        if not (nameLow:find("level", 1, true) or nameLow:find("mastery", 1, true)
+                            or nameLow:find("lv", 1, true) or nameLow:find("price", 1, true)) then
+
+                            local prio = 1
+                            if nameLow:find("count", 1, true) or nameLow:find("amount", 1, true)
+                                or nameLow:find("qty", 1, true) or nameLow:find("quantity", 1, true)
+                                or nameLow:find("stack", 1, true) or nameLow:find("num", 1, true) then
+                                prio = 3
+                            elseif isVisibleTree(desc) then
+                                prio = 2
+                            end
+
+                            if prio > bestPrio or (prio == bestPrio and (not bestVal or n > bestVal)) then
+                                bestPrio = prio
+                                bestVal  = n
+                            end
+                        end
                     end
                 end
             end
         end
     end
-    return nil
+
+    return bestVal
+end
+
+local function getItemSlot(obj)
+    -- Leo ngược lên đến ngay dưới GridContainer (ScrollingFrame / UIGridLayout)
+    local slot = obj:IsA("GuiObject") and obj or nil
+    local cur = obj.Parent
+    for _ = 1, 5 do
+        if not cur or isGridContainer(cur) then
+            break
+        end
+        if cur:IsA("GuiObject") then
+            slot = cur
+        end
+        cur = cur.Parent
+    end
+    return slot
 end
 
 local function getCountNearObject(obj, keyword)
-    local candidates = { obj, obj.Parent, obj.Parent and obj.Parent.Parent }
-    for _, box in ipairs(candidates) do
-        if box and box:IsA("GuiObject") and #box:GetChildren() <= 15 then
-            local n = parseNumberFromSlot(box, keyword)
+    -- 1. Thử đọc ngay trong ô item chuẩn (ngay dưới ScrollingFrame/UIGridLayout)
+    local slot = getItemSlot(obj)
+    if slot then
+        local n = parseCountFromSlot(slot, keyword)
+        if n then return n end
+    end
+
+    -- 2. Thử đọc chính obj và các cha gần nhất nếu chưa đụng GridContainer
+    local cur = obj
+    for _ = 1, 4 do
+        if not cur or isGridContainer(cur) then break end
+        if cur:IsA("GuiObject") then
+            local n = parseCountFromSlot(cur, keyword)
             if n then return n end
         end
+        cur = cur.Parent
     end
-    return 1
+
+    return 1 -- Không có số hiển thị trên ô => số lượng mặc định là 1
 end
 
 local function scanInventoryUI(pGui)
@@ -256,91 +315,4 @@ local function scanInventoryUI(pGui)
 end
 
 -- ============================================================
--- QUY TRÌNH TỰ MỞ -> ĐỌC -> ĐÓNG
--- ============================================================
-local lastEggs, lastBones = 0, 0
-
-local function autoOpenAndCheck(runIndex)
-    local pGui = lp:FindFirstChild("PlayerGui")
-    if not pGui then
-        StatusLabel.Text = "Khong thay PlayerGui (#" .. tostring(runIndex) .. ")"
-        return
-    end
-
-    -- Quét trước 1 lượt phòng trường hợp item đã được load sẵn trong UI
-    local preHit, preEgg, preBone = scanInventoryUI(pGui)
-    if preHit then
-        lastEggs, lastBones = preEgg, preBone
-        EggLabel.Text  = "Dragon Egg: " .. tostring(preEgg)
-        BoneLabel.Text = "Dinosaur Bones: " .. tostring(preBone)
-        StatusLabel.Text = "Doc truc tiep OK (#" .. tostring(runIndex) .. ")"
-        return
-    end
-
-    if type(firesignal) ~= "function" and type(getconnections) ~= "function" then
-        StatusLabel.Text = "Executor thieu firesignal/getconnections"
-        return
-    end
-
-    -- Tìm nút Items (mở Menu trước nếu Items đang ẩn)
-    local itemsBtn = findButtonSmart(pGui, { "items", "inventory" })
-    if not itemsBtn or not isVisibleTree(itemsBtn) then
-        local menuBtn = findButtonSmart(pGui, { "menu" })
-        if menuBtn then
-            StatusLabel.Text = "Bam Menu (" .. menuBtn.Name .. ")..."
-            clickGuiButton(menuBtn)
-            task.wait(0.6)
-            itemsBtn = findButtonSmart(pGui, { "items", "inventory" })
-        end
-    end
-
-    if not itemsBtn then
-        StatusLabel.Text = "Van khong thay nut Items (#" .. tostring(runIndex) .. ")"
-        return
-    end
-
-    StatusLabel.Text = "Bam " .. itemsBtn.Name .. "..."
-    clickGuiButton(itemsBtn)
-    task.wait(1.2)
-
-    -- Chuyển sang tab Material nếu thấy
-    local matBtn = findButtonSmart(pGui, { "material", "materials" })
-    if matBtn and isVisibleTree(matBtn) then
-        StatusLabel.Text = "Chon tab Material..."
-        clickGuiButton(matBtn)
-        task.wait(0.8)
-    end
-
-    -- Quét item
-    local hitAny, eggs, bones = scanInventoryUI(pGui)
-    lastEggs, lastBones = eggs, bones
-    EggLabel.Text  = "Dragon Egg: " .. tostring(eggs)
-    BoneLabel.Text = "Dinosaur Bones: " .. tostring(bones)
-
-    -- Đóng túi đồ lại
-    task.wait(0.3)
-    clickGuiButton(itemsBtn)
-
-    if hitAny then
-        StatusLabel.Text = "OK - Da dong tui (#" .. tostring(runIndex) .. ")"
-    else
-        StatusLabel.Text = "Da bam " .. itemsBtn.Name .. " - 0 item (#" .. tostring(runIndex) .. ")"
-    end
-end
-
-pcall(function()
-    if type(getgenv) == "function" then
-        getgenv().CheckDragonItems = function()
-            return lastEggs, lastBones
-        end
-    end
-end)
-
-task.spawn(function()
-    local runIndex = 0
-    while true do
-        runIndex = runIndex + 1
-        pcall(autoOpenAndCheck, runIndex)
-        task.wait(CHECK_DELAY)
-    end
-end)
+-- QUY TRÌNH TỰ MỞ -> ĐỌC -> Đ
